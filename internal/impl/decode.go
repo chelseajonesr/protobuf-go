@@ -5,6 +5,7 @@
 package impl
 
 import (
+	"fmt"
 	"math/bits"
 
 	"google.golang.org/protobuf/encoding/protowire"
@@ -111,13 +112,13 @@ func (mi *MessageInfo) unmarshalPointer(b []byte, p pointer, groupTag protowire.
 			var n int
 			tag, n = protowire.ConsumeVarint(b)
 			if n < 0 {
-				return out, errDecode
+				return out, fmt.Errorf("Error line %d, message %s, path %s, zeros %t, b %x", 115, mi.Desc.Name(), mi.Desc.ParentFile().Path(), isZeroData(b), formatData(b))
 			}
 			b = b[n:]
 		}
 		var num protowire.Number
 		if n := tag >> 3; n < uint64(protowire.MinValidNumber) || n > uint64(protowire.MaxValidNumber) {
-			return out, errDecode
+			return out, fmt.Errorf("Error line %d, message %s, path %s, zeros %t, n %d, b %x", 121, mi.Desc.Name(), mi.Desc.ParentFile().Path(), isZeroData(b), n, formatData(b))
 		} else {
 			num = protowire.Number(n)
 		}
@@ -125,7 +126,7 @@ func (mi *MessageInfo) unmarshalPointer(b []byte, p pointer, groupTag protowire.
 
 		if wtyp == protowire.EndGroupType {
 			if num != groupTag {
-				return out, errDecode
+				return out, fmt.Errorf("Error line %d, message %s, path %s, zeros %t, b %x", 129, mi.Desc.Name(), mi.Desc.ParentFile().Path(), isZeroData(b), formatData(b))
 			}
 			groupTag = 0
 			break
@@ -181,7 +182,7 @@ func (mi *MessageInfo) unmarshalPointer(b []byte, p pointer, groupTag protowire.
 			}
 			n = protowire.ConsumeFieldValue(num, wtyp, b)
 			if n < 0 {
-				return out, errDecode
+				return out, fmt.Errorf("Error line %d, message %s, path %s, zeros %t", 185, mi.Desc.Name(), mi.Desc.ParentFile().Path(), isZeroData(b))
 			}
 			if !opts.DiscardUnknown() && mi.unknownOffset.IsValid() {
 				u := mi.mutableUnknownBytes(p)
@@ -192,7 +193,7 @@ func (mi *MessageInfo) unmarshalPointer(b []byte, p pointer, groupTag protowire.
 		b = b[n:]
 	}
 	if groupTag != 0 {
-		return out, errDecode
+		return out, fmt.Errorf("Error line %d, message %s, path %s, groupTag %d", 196, mi.Desc.Name(), mi.Desc.ParentFile().Path(), groupTag)
 	}
 	if mi.numRequiredFields > 0 && bits.OnesCount64(requiredMask) != int(mi.numRequiredFields) {
 		initialized = false
@@ -232,7 +233,7 @@ func (mi *MessageInfo) unmarshalExtension(b []byte, num protowire.Number, wtyp p
 					return out, nil
 				}
 			case ValidationInvalid:
-				return out, errDecode
+				return out, fmt.Errorf("Error line %d, message %s, path %s, zeros %t", 236, mi.Desc.Name(), mi.Desc.ParentFile().Path(), isZeroData(b))
 			case ValidationUnknown:
 			}
 		}
@@ -282,4 +283,25 @@ func skipExtension(b []byte, xi *extensionFieldInfo, num protowire.Number, wtyp 
 	default:
 		return out, ValidationUnknown
 	}
+}
+
+func isZeroData(b []byte) bool {
+	len := len(b)
+	if len > 10 {
+		len = 10
+	}
+	for i := 0; i < len; i++ {
+		if b[i] != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func formatData(b []byte) string {
+	l := 10
+	if l > len(b) {
+		l = len(b)
+	}
+	return fmt.Sprintf("%x", b[:l])
 }
